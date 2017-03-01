@@ -1,7 +1,7 @@
-import httplib2
 import sys
-from urllib import quote
-from BeautifulSoup import BeautifulSoup, SoupStrainer
+from urllib.parse import quote
+from urllib import request
+from bs4 import BeautifulSoup, SoupStrainer
 
 
 home_page = 'https://www.jobs.bg'
@@ -9,17 +9,18 @@ home_page = 'https://www.jobs.bg'
 def get_all_jobs_on_page(response):
     # Parse job urls
     job_urls = []
-    for link in BeautifulSoup(response, parseOnlyThese=SoupStrainer('a')):
-        if link.has_key('class') and link['class'].decode('utf-8') == 'joblink' and link.has_key('href'):
+    soup = BeautifulSoup(response, 'html.parser')
+    for link in soup.find_all('a'):
+        if link.has_attr('class') and link['class'][0] == 'joblink' and link.has_attr('href'):
             job_urls.append('{}/{}'.format(home_page, link['href']))
-
     return job_urls
 
 
 def get_next_page_url(response):
-    for link in BeautifulSoup(response, parseOnlyThese=SoupStrainer('a')):
+    # links = []
+    for link in BeautifulSoup(response,'html.parser', parse_only=SoupStrainer('a')):
         # The link to the next page is something as follows: '<a href=".." class="pathlink">>></a>'
-        if link.has_key('class') and link['class'] == 'pathlink' and link.text == '&gt;&gt;':
+        if link.has_attr('class') and link['class'][0] == 'pathlink' and link.text == '>>':
             return home_page + '/' + link['href']
     return ''
 
@@ -29,9 +30,9 @@ def search_for_job(host='https://www.jobs.bg',keywords='', all_pages=False):
     get_params = 'front_job_search.php?first_search=1&distance=0&location_sid=&all_categories=0&all_type=0&all_position_level=1'
     # Prepare keywords to insert into query
     keyword = quote(keywords.replace(' ', '+'))
-    http = httplib2.Http()
     final_query_url = 'https://www.jobs.bg/{}&keyword={}'.format(get_params, keyword)
-    status, response = http.request(final_query_url)
+
+    response = request.urlopen(final_query_url).read()
 
     if all_pages:
         # logic to check all pages
@@ -40,7 +41,7 @@ def search_for_job(host='https://www.jobs.bg',keywords='', all_pages=False):
 
         while next_page_url:
             jobs.extend(get_all_jobs_on_page(response))
-            status, response = http.request(next_page_url)
+            response = request.urlopen(next_page_url).read()
             next_page_url = get_next_page_url(response)
         # Fetching the jobs on the last page
         jobs.extend(get_all_jobs_on_page(response))
@@ -60,10 +61,10 @@ def main():
         # This weird string makes the console output color light green
         # '\033[1;32mGreen like Grass\033[1;m'
         print('\033[1;32m[+] Found {} job results for keyword "{}"\033[1;m'.format(len(jobs), keyword))
-        print
+        print()
         print('\033[1;32m[+] Diplaying first 10 results\033[1;m')
         print('\n'.join(jobs[:10]))
-        print
+        print()
 
 
 if __name__ == "__main__":
