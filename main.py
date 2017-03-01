@@ -1,16 +1,21 @@
 import sys
-from urllib.parse import quote
-from urllib import request
 from bs4 import BeautifulSoup, SoupStrainer
+from urllib import request
+from urllib.parse import quote
+
+# Benchmark decorator displays time for executing a method
+from decorators import benchmark
 
 
 home_page = 'https://www.jobs.bg'
 
+
 def get_all_jobs_on_page(response):
     # Parse job urls
     job_urls = []
-    soup = BeautifulSoup(response, 'html.parser')
-    for link in soup.find_all('a'):
+    # soup = BeautifulSoup(response, 'html.parser')
+    # for link in soup.find_all('a'):
+    for link in BeautifulSoup(response, 'html.parser', parse_only=SoupStrainer('a')):
         if link.has_attr('class') and link['class'][0] == 'joblink' and link.has_attr('href'):
             job_urls.append('{}/{}'.format(home_page, link['href']))
     return job_urls
@@ -40,8 +45,11 @@ def search_for_job(host='https://www.jobs.bg',keywords='', all_pages=False):
         next_page_url = get_next_page_url(response)
 
         while next_page_url:
+            # print('getting all jobs')
             jobs.extend(get_all_jobs_on_page(response))
+            # print('getting next page')
             response = request.urlopen(next_page_url).read()
+            # print('getting next page url')
             next_page_url = get_next_page_url(response)
         # Fetching the jobs on the last page
         jobs.extend(get_all_jobs_on_page(response))
@@ -50,6 +58,7 @@ def search_for_job(host='https://www.jobs.bg',keywords='', all_pages=False):
         return get_all_jobs_on_page(response)
 
 
+# @benchmark
 def main():
     if len(sys.argv) != 2:
         print('Usage: python main.py keywords,separated,by,comma')
