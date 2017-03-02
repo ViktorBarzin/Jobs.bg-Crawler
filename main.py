@@ -2,35 +2,17 @@ import sys
 from bs4 import BeautifulSoup, SoupStrainer
 from urllib import request
 from urllib.parse import quote
-import argparse
 
 # Benchmark decorator displays time for executing a method
 from decorators import benchmark
+from helpers import setup_parser, print_jobs, job_hours, job_level, job_types
 
 
 home_page = 'https://www.jobs.bg'
-job_types = {
-        'all types': ('all_type', 0),
-        'full time': ('job_type[]', 1),
-        'part time': ('job_type[]', 2),
-        'internship': ('job_type[]', 4)
-}
-
-job_hours = {
-        'full time': ('job_hours[]', 1),
-        'not full time': ('job_hours[]',2)
-}
-
-suitable_for_students = {
-        'for students': ('is_student', 1)
-}
-
 
 def get_all_jobs_on_page(response):
     # Parse job urls
     job_urls = []
-    # soup = BeautifulSoup(response, 'html.parser')
-    # for link in soup.find_all('a'):
     for link in BeautifulSoup(response, 'html.parser', parse_only=SoupStrainer('a')):
         if link.has_attr('class') and link['class'][0] == 'joblink' and link.has_attr('href'):
             job_urls.append('{}/{}'.format(home_page, link['href']))
@@ -38,7 +20,6 @@ def get_all_jobs_on_page(response):
 
 
 def get_next_page_url(response):
-    # links = []
     for link in BeautifulSoup(response,'html.parser', parse_only=SoupStrainer('a')):
         # The link to the next page is something as follows: '<a href=".." class="pathlink">>></a>'
         if link.has_attr('class') and link['class'][0] == 'pathlink' and link.text == '>>':
@@ -46,20 +27,31 @@ def get_next_page_url(response):
     return ''
 
 
-def search_for_job(host='https://www.jobs.bg',keywords='',job_type=[], all_pages=False):
-    # Jobs.bg specific get params
-    # Looking for jobs in IT sector
-    import ipdb; ipdb.set_trace()# BREAKPOINT)
+def tuple_to_url_param(inp):
+    # Transforms a tuple with arguments to jobs.bg get params
+    if inp and len(inp) >= 2:
+        return '&{}={}'.format(inp[0], inp[1])
+    return ''
 
-    # Prepare job_type to insert into query
-    if job_type:
-        job_type_url = '&{}={}'.format(job_type[0], job_type[1])
-    else:
-        job_type_url = ''
-    get_params = 'front_job_search.php?first_search=1&distance=0&location_sid=&categories[]=14&categories[]=15&categories[]=16{}&all_position_level=1'.format(job_type_url)
+def search_for_job(host='https://www.jobs.bg',params={}, all_pages=False):
+    # Looking for jobs in IT sector
+
+    # If you want to search in another categories, fiddle with the categories
+    # parameter in the get_params string below
+
     # Prepare keywords to insert into query
-    keyword = quote(keywords.replace(' ', '+'))
-    final_query_url = 'https://www.jobs.bg/{}&keyword={}'.format(get_params, keyword)
+    # does inner join on all passed keywords
+    keywords = [quote(x) for x in params.pop('keywords')]
+    keyword = '&keyword={}'.format('+'.join(keywords))
+
+    for key, value in params.items():
+        params[key] = tuple_to_url_param(value)
+
+    get_params = 'front_job_search.php?first_search=1&distance=0&location_sid=&categories[]=14&categories[]=15&categories[]=16&all_position_level=1'
+    get_params += ''.join(params.values())
+    get_params += keyword
+
+    final_query_url = 'https://www.jobs.bg/{}'.format(get_params)
 
     response = request.urlopen(final_query_url).read()
 
@@ -69,11 +61,8 @@ def search_for_job(host='https://www.jobs.bg',keywords='',job_type=[], all_pages
         next_page_url = get_next_page_url(response)
 
         while next_page_url:
-            # print('getting all jobs')
             jobs.extend(get_all_jobs_on_page(response))
-            # print('getting next page')
             response = request.urlopen(next_page_url).read()
-            # print('getting next page url')
             next_page_url = get_next_page_url(response)
         # Fetching the jobs on the last page
         jobs.extend(get_all_jobs_on_page(response))
@@ -84,30 +73,21 @@ def search_for_job(host='https://www.jobs.bg',keywords='',job_type=[], all_pages
 
 # @benchmark
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--keywords', nargs='+', required = True, help='filter jobs by keywords, separated with space (" ")')
-    parser.add_argument('--job-type', choices = list(job_types.keys()), help='filter job by type')
-
-    # Get if should look on all pages or only first
-    parser.add_argument('--all-pages', dest='all_pages', action='store_true', help='sets a flag wheter to scan all pages or just first')
-    # parser.add_argument('--first-page', dest='all_pages', action='store_false')
-    parser.set_defaults(all_pages=False)
-
-
+    parser = setup_parser()
     args = parser.parse_args()
-    keywords = args.keywords if args.keywords else ['']
-    user_job_type = job_types.get(args.job_type, 'all jobs')
 
-    for keyword in keywords:
-        jobs = search_for_job('https://www.jobs.bg', keyword,job_type=user_job_type, all_pages=args.all_pages)
-        # This weird string makes the console output color light green
-        # '\033[1;32mGreen like Grass\033[1;m'
-        print('\033[1;32m[+] Found {} job results for keyword "{}"\033[1;m'.format(len(jobs), keyword))
-        print()
-        print('\033[1;32m[+] Diplaying first 10 results\033[1;m')
-        print('\n'.join(jobs[:10]))
-        print()
+    # expected input:" --keywords="kw1 kw2 kw3"
+    keywords = args.keywords.split(' ') if args.keywords else ['']
+    # Consider adding some default values to search with
+    user_job_type = job_types.get(args.job_type, '')
+    user_job_time = job_hours.get(args.job_time, '')
+    user_job_position = job_level.get(args.position, '')
 
+    params = {'keywords':keywords, 'job_type': user_job_type, 'job_time': user_job_time, 'job_position': user_job_position}
+
+    jobs = search_for_job('https://www.jobs.bg', params=params, all_pages=args.all_pages)
+    print_jobs(jobs, keywords, args.all_pages)
 
 if __name__ == "__main__":
     main()
+
